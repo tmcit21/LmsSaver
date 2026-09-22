@@ -52,6 +52,43 @@ Native Messagingホスト (Python) はブラウザとは別にインストール
 
 ---
 
+## 配布形態
+
+### 現在 (手動配布)
+
+| 対象 | 形式 |
+|---|---|
+| Chrome / Edge | `chrome-mv3-prod/` ディレクトリを受け取り、デベロッパーモードで読み込み |
+| Firefox | AMO署名済みXPI |
+| Native Messagingホスト | Pythonインストール + `install.sh` / `install.ps1` |
+
+OAuthクライアントは**各ユーザーが自分のGoogle Cloudプロジェクトで作成**する
+(拡張にクライアントIDを埋め込まない設計)。
+
+### 将来: ストア公開する場合
+
+**拡張機能** (Chrome Web Store / addons.mozilla.org):
+
+- OAuthクライアントIDは**開発者が1つ用意してmanifestに埋め込む**
+  (client_idは秘密情報ではないため埋め込みOK。インストール後はユーザーは編集できず、承認ボタンを押すだけで済む)
+- ストア公開すると拡張IDが自動採番されるため、manifestの`key`フィールドでIDを固定してから
+  OAuthクライアントに登録する
+- Tasks APIのスコープは「センシティブ」区分: テストモードでは**100ユーザー上限**+「未確認アプリ」警告。
+  一般公開にはGoogleの審査 (プライバシーポリシー、デモ動画) が必要
+- ⚠️ ストア版は「任意サイトへのアクセス」警告が出るため、レビューで非効率になりやすい。
+  host_permissionsを `https://lms-wc.el.kanazawa-u.ac.jp/*` に絞るのが望ましい
+
+**Native Messagingホスト** (GitHub Releases):
+
+- PyInstallerで単一exeにビルドしたものをReleasesに置く (ユーザーはPython不要)
+  - Windows: `native/build_windows.bat` を実行 → `build/pyinstaller/lms_saver_host_win.exe`
+  - `install.ps1` に `-HostExe` を渡すとPython不要で登録できる
+- macOS/LinuxはPythonインストールが一般的なので `install.sh` のままでもよいが、
+  同様にPyInstaller化可能
+- 配布時は実行ファイルにコード署名がないとSmartScreen/ Gatekeeperで警告が出る点に注意
+
+---
+
 ## エンドユーザー向け: インストール
 
 ### 共通: Python 3.10+ のインストール
@@ -170,13 +207,48 @@ manifest に必須の設定 (package.json の `manifest.browser_specific_setting
 
 ---
 
-## Google Tasks連携のセットアップ
+## セットアップ (開発者自身のGoogle Cloud設定)
+
+**Google Auth Platformの設定** (OAuth同意画面):
+
+| 項目 | 入力する値 |
+|---|---|
+| アプリケーション名 | `LMS Saver - WebClass資料自動保存` など |
+| アプリケーションのホームページ | GitHubリポジトリのURL (READMEが見えるもの) |
+| アプリケーションプライバシーポリシー | リポジトリ内の `PRIVACY.md` のURL |
+| サポートメール | あなたが受け取れるメールアドレス |
+| 対象 (Audience) | **External** (Internalは個人アカウントで組織制限エラーになる) |
+
+リポジトリを公開してREADMEとPRIVACY.mdがブラウザから見える状態にしておくこと。
+
+**OAuthクライアントの作成:**
 
 コーストップを開くと「利用可能期間」付きのコンテンツ (課題・レポート・試験・資料すべて) を検出し、
 専用タスクリスト「WebClass課題」に自動登録する。締め切りは利用可能期間の**終了日時** (JST)。
 
-**各ユーザーが自分のGoogle CloudプロジェクトでOAuthクライアントを作る必要がある**
-(共有クライアントは使わない設計。拡張にクライアントIDは埋め込まれていない)。
+### 配布者 (開発者) が行うこと — ストア公開する場合
+
+拡張に**開発者のOAuthクライアントIDを1つ埋め込む**。client_idは秘密情報ではないため
+manifestへの埋め込みは公式に想定された使い方。ユーザーは承認ボタンを押すだけ。
+
+1. Google Cloud Console → 「APIとサービス」→「ライブラリ」→ **Tasks API** を有効化
+2. Google Auth Platform → 「クライアント」→「クライアントを作成」
+
+   **Chrome / Edge 版:**
+   - アプリケーションの種類: **Chrome アプリケーション**
+   - 拡張ID: ストア公開後に採番されるID (先にドラフト申請してIDを確認→manifestに`key`で固定→再申請)
+   - **Firefox 版:**
+   - アプリケーションの種類: **ウェブ アプリケーション** (Chromeアプリケーション型はredirect URI追加不可)
+   - リダイレクトURI: `https://<gecko-id>.extensions.allizom.org/` (AMO署名版の固定URL)
+3. `package.json` の `oauth2.client_id` にChrome用クライアントIDを設定して `pnpm build`
+4. Firefox版のクライアントIDはmanifestの `oauth2.client_id_ff` (または専用フィールド) に設定。
+   実装上は `lib/auth.ts` がFirefoxビルドで優先的に参照する (現在はポップアップ設定を優先。
+   ストア版ではmanifest値に切り替える)
+
+### 現在の設計 (ユーザーが自分のクライアントを作る) — 手動配布の場合
+
+**各ユーザーが自分のGoogle CloudプロジェクトでOAuthクライアントを作る**運用も可能
+(拡張にクライアントIDを埋め込まない場合)。その場合の手順:
 
 1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作成
 2. 「APIとサービス」→「ライブラリ」→ **Tasks API** を有効化

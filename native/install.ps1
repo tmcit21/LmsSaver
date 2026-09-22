@@ -8,7 +8,9 @@
 #   py ランチャーがあればそれを使う
 
 param(
-    [string]$BuildDir = ""
+    [string]$BuildDir = "",
+    # PyInstallerでビルドした実行ファイルを使う場合に指定 (Python不要の配布形態)
+    [string]$HostExe = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,59 +29,72 @@ if (-not (Test-Path $BuildDir)) {
     Write-Error "ビルドディレクトリが見つかりません: $BuildDir : 先に pnpm build を実行してください"
 }
 
-# ---- Python の検出 -----------------------------------------------------------
-# 1) py ランチャー  2) python.exe on PATH  3) 一般的なインストール先
-# Native Messaging のマニフェスト path は「実行ファイル」でなければならないので
-# Python スクリプト直指定は不可。ラッパ .bat を作ってそれを指定する。
-$PythonExe = $null
-try {
-    $py = & py -3 -c "import sys; print(sys.executable)" 2>$null
-    if ($LASTEXITCODE -eq 0 -and $py) { $PythonExe = $py.Trim() }
-} catch {}
-if (-not $PythonExe) {
-    $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($cmd) {
-        $v = & $cmd.Source -c "import sys; print(sys.version_info >= (3,10))" 2>$null
-        if ($v -match "True") { $PythonExe = $cmd.Source }
+# ---- ホスト実行ファイルの決定 ---------------------------------------------------
+# -HostExe が指定されていれば PyInstaller バイナリを使う (Python不要のエンドユーザー配布)
+# 無ければ Python を検出して .bat ラッパ経由で動かす
+$BatPath = $null
+$HostBinary = $null
+if ($HostExe) {
+    if (-not (Test-Path $HostExe)) {
+        Write-Error "指定されたホスト実行ファイルが見つかりません: $HostExe"
     }
-}
-if (-not $PythonExe) {
-    $candidates = @(
-        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
-        "C:\Python312\python.exe",
-        "C:\Program Files\Python312\python.exe"
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { $PythonExe = $c; break }
+    $HostBinary = (Resolve-Path $HostExe).Path
+    Write-Host "ホスト実行ファイル (PyInstaller): $HostBinary"
+} else {
+    # ---- Python の検出 ---------------------------------------------------------
+    # 1) py ランチャー  2) python.exe on PATH  3) 一般的なインストール先
+    $PythonExe = $null
+    try {
+        $py = & py -3 -c "import sys; print(sys.executable)" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $py) { $PythonExe = $py.Trim() }
+    } catch {}
+    if (-not $PythonExe) {
+        $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
+        if ($cmd) {
+            $v = & $cmd.Source -c "import sys; print(sys.version_info >= (3,10))" 2>$null
+            if ($v -match "True") { $PythonExe = $cmd.Source }
+        }
     }
-}
-if (-not $PythonExe) {
-    Write-Error "Python 3.10+ が見つかりません。https://www.python.org/downloads/ からインストールし、「Add python.exe to PATH」にチェックを入れてから再実行してください"
-}
-Write-Host "Python: $PythonExe"
+    if (-not $PythonExe) {
+        $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+            "C:\Python312\python.exe",
+            "C:\Program Files\Python312\python.exe"
+        )
+        foreach ($c in $candidates) {
+            if (Test-Path $c) { $PythonExe = $c; break }
+        }
+    }
+    if (-not $PythonExe) {
+        Write-Error "Python 3.10+ が見つかりません。https://www.python.org/downloads/ からインストールして「Add python.exe to PATH」にチェックするか、-HostExe でPyInstallerビルド済みバイナリを指定してください"
+    }
+    Write-Host "Python: $PythonExe"
 
-# ---- 拡張IDの計算 (未パッケージ拡張 = SHA256(絶対パス) の先頭32文字を a-p にマップ) --
-$ExtId = & python -c @"
+    # ---- 拡張IDの計算 (未パッケージ拡張 = SHA256(絶対パス) の先頭32文字を a-p にマップ) --
+    $ExtId = & $PythonExe -c @"
 import hashlib
 p = r'''$BuildDir'''
 print(hashlib.sha256(p.encode()).hexdigest()[:32].translate(str.maketrans('0123456789abcdef','abcdefghijklmnop')))
 "@
-Write-Host "拡張ID: $ExtId"
-Write-Host "  (chrome://extensions デベロッパーモードで読み込むディレクトリ: $BuildDir)"
+    Write-Host "拡張ID: $ExtId"
+    Write-Host "  (chrome://extensions デベロッパーモードで読み込むディレクトリ: $BuildDir)"
 
-# ---- ラッパ .bat の作成 -------------------------------------------------------
-# manifest の "path" は .bat や .exe を指せる。argv[1] に拡張IDが来るので %* で透過。
-$BatPath = Join-Path $Dir "lms_saver_host.bat"
-@"
+    # ---- ラッパ .bat の作成 ----------------------------------------------------
+    # manifest の "path" は .bat や .exe を指せる。argv[1] に拡張IDが来るので %* で透過。
+    $BatPath = Join-Path $Dir "lms_saver_host.bat"
+    @"
 @echo off
 "$PythonExe" "$HostPy" %*
 "@ | Out-File -FilePath $BatPath -Encoding ascii
-Write-Host "ラッパ: $BatPath"
+    Write-Host "ラッパ: $BatPath"
+    $HostBinary = $BatPath
+}
 
 # ---- 設定マニフェストの作成 ----------------------------------------------------
-# Chrome/Edge/Chromium: %LOCALAPPDATA% 配下 (HKCUレジストリ登録は不要。ユーザーディレクトリでOK)
+# Windowsでは「レジストリキー → manifest JSON」の順で解決される。
+# Chrome/Edge/Chromium/Firefox それぞれの HKCU キーを作成する。
 $ChromeDir  = "$env:LOCALAPPDATA\Google\Chrome\User Data\NativeMessagingHosts"
 $EdgeDir    = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\NativeMessagingHosts"
 $ChromiumDir = "$env:LOCALAPPDATA\Chromium\User Data\NativeMessagingHosts"
@@ -101,7 +116,7 @@ $Origins = $Origins | Select-Object -Unique
 $ManifestObj = [ordered]@{
     name        = $HostName
     description = "LMS Saver: WebClass資料自動保存"
-    path        = $BatPath
+    path        = $HostBinary
     type        = "stdio"
     allowed_origins = $Origins
 }
@@ -114,13 +129,27 @@ foreach ($D in @($ChromeDir, $EdgeDir, $ChromiumDir)) {
     Write-Host "登録: $P"
 }
 
+# ---- レジストリ登録 (Windowsではこれが必須) -------------------------------------
+# ブラウザごとに HKCU\Software\<vendor>\NativeMessagingHosts\<host名> の
+# 既定値にmanifest JSONへのフルパスを設定する
+foreach ($Pair in @(
+    @{ Key = "HKCU:\Software\Google\Chrome\NativeMessagingHosts";  Manifest = (Join-Path $ChromeDir "$HostName.json");  Name = "Chrome" },
+    @{ Key = "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts"; Manifest = (Join-Path $EdgeDir "$HostName.json");    Name = "Edge" },
+    @{ Key = "HKCU:\Software\Chromium\NativeMessagingHosts";       Manifest = (Join-Path $ChromiumDir "$HostName.json"); Name = "Chromium" },
+    @{ Key = "HKCU:\Software\Mozilla\NativeMessagingHosts";        Manifest = (Join-Path $FirefoxDir "$HostName.json");  Name = "Firefox" }
+)) {
+    New-Item -Path $Pair.Key -Force | Out-Null
+    Set-ItemProperty -Path $Pair.Key -Name $HostName -Value $Pair.Manifest
+    Write-Host "レジストリ登録: $($Pair.Name) -> $($Pair.Manifest)"
+}
+
 # ---- Firefox ----------------------------------------------------------------
 # Firefoxのネイティブマニフェストは allowed_extensions を使う
 New-Item -ItemType Directory -Force -Path $FirefoxDir | Out-Null
 $FfManifest = [ordered]@{
     name        = $HostName
     description = "LMS Saver: WebClass資料自動保存 (Firefox)"
-    path        = $BatPath
+    path        = $HostBinary
     type        = "stdio"
     allowed_extensions = @($GeckoId)
 }
@@ -140,9 +169,12 @@ if (-not (Test-Path $CfgPath)) {
 
 Write-Host ""
 Write-Host "✅ インストール完了"
-Write-Host "  ホスト: $HostPy"
-Write-Host "  ラッパ: $BatPath"
-Write-Host "  Python: $PythonExe"
+Write-Host "  ホスト: $HostBinary"
+if ($HostExe) {
+    Write-Host "  モード: PyInstallerバイナリ (Python不要)"
+} else {
+    Write-Host "  Python: $PythonExe"
+}
 Write-Host "  拡張ID: $ExtId"
 Write-Host ""
 Write-Host "ブラウザを再起動して拡張ポップアップの「接続テスト」を押してください。"
