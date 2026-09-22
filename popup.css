@@ -1,0 +1,117 @@
+body {
+  margin: 0;
+  font-family:
+    -apple-system,
+    "Hiragino Sans",
+    sans-serif;
+  font-size: 12px;
+}
+
+.wrap {
+  width: 420px;
+  padding: 12px 14px;
+}
+
+h1 {
+  font-size: 15px;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ok {
+  color: #16a34a;
+}
+
+.err {
+  color: #dc2626;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+.label {
+  flex: 0 0 auto;
+  color: #555;
+}
+
+input[type="text"],
+input:not([type]) {
+  flex: 1 1 auto;
+  min-width: 120px;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.toggles label,
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+button {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #f6f6f6;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #ececec;
+}
+
+.log {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: #fafafa;
+  line-height: 1.5;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.dim {
+  color: #999;
+}
+
+details.advanced {
+  margin-top: 6px;
+}
+
+details.advanced summary {
+  cursor: pointer;
+  color: #666;
+  font-size: 11px;
+  user-select: none;
+}
+
+.advanced-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.advanced-body code {
+  font-size: 10px;
+  word-break: break-all;
+  background: #f0f0f0;
+  padding: 3px 5px;
+  border-radius: 3px;
+}

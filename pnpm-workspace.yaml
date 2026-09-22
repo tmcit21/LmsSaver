@@ -1,0 +1,15 @@
+allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  esbuild: true
+  lmdb: true
+  msgpackr-extract: true
+  sharp: true
+
+packages:
+  - '.'
+
+nodeLinker: 'isolated'
+
+overrides:
+  chalk: '^4.1.2'

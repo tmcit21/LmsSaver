@@ -1,0 +1,9 @@
+{
+  "name": "jp.ac.kanazawa_u.lms_saver",
+  "description": "LMS Saver: WebClass資料自動保存",
+  "path": "TBD_ABSOLUTE_HOST_PATH",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://TBD_EXTENSION_ID/"
+  ]
+}
